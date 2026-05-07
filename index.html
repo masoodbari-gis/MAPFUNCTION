@@ -1,0 +1,1569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Web GIS - Karachi Geospatial Query System</title>
+    
+    <!-- CSS Dependencies -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- JavaScript Dependencies -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src='https://unpkg.com/@turf/turf@6/turf.min.js'></script>
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+        
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+            z-index: 0;
+        }
+        
+        .controls-panel {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .controls-panel button {
+            background: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            font-weight: 500;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .controls-panel button:hover { background: #f0f0f0; transform: scale(1.02); }
+        
+        .layer-toggle-panel {
+            background: rgba(255,255,255,0.95);
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            padding: 10px 12px;
+            font-size: 12px;
+            min-width: 190px;
+        }
+
+        .layer-toggle-panel h6 {
+            margin: 0 0 8px 0;
+            font-size: 12px;
+            color: #2c3e50;
+            font-weight: 700;
+        }
+
+        .layer-toggle-panel label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 6px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .layer-toggle-panel label:last-child {
+            margin-bottom: 0;
+        }
+        
+        .query-panel {
+            position: absolute;
+            top: 80px;
+            left: 15px;
+            width: 350px;
+            max-height: 85vh;
+            background: rgba(255,255,255,0.98);
+            backdrop-filter: blur(2px);
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+            z-index: 1001;
+            padding: 15px;
+            overflow-y: auto;
+            font-size: 13px;
+        }
+        
+        .query-panel h4 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 6px;
+        }
+        
+        .query-panel label {
+            font-weight: 600;
+            margin-top: 8px;
+            margin-bottom: 4px;
+            display: block;
+            font-size: 12px;
+        }
+        
+        .query-panel select, .query-panel input, .query-panel textarea {
+            width: 100%;
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .btn-run { background: #e74c3c; color: white; width: 100%; padding: 8px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+        .btn-run:hover { background: #c0392b; }
+        .btn-secondary-custom { background: #95a5a6; color: white; width: 100%; padding: 8px; border: none; border-radius: 8px; cursor: pointer; margin-top: 5px; }
+        
+        .results-table {
+            position: absolute;
+            bottom: 20px;
+            left: 15px;
+            right: 15px;
+            max-width: 550px;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(8px);
+            color: white;
+            border-radius: 12px;
+            padding: 12px;
+            z-index: 1000;
+            font-size: 11px;
+            overflow-x: auto;
+            display: none;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .results-table table { width: 100%; border-collapse: collapse; }
+        .results-table th, .results-table td { padding: 5px 8px; text-align: left; border-bottom: 1px solid #444; }
+        .results-table th { background: #2c3e50; }
+        
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            right: 15px;
+            background: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            font-size: 11px;
+            display: none;
+        }
+        
+        .legend span {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+            margin-right: 5px;
+        }
+        
+        .heatmap-note {
+            background: #fff3cd;
+            border-left: 3px solid #f39c12;
+            padding: 6px;
+            font-size: 10px;
+            margin-top: 8px;
+            border-radius: 4px;
+        }
+        
+        .status-bar {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: #0f0;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 11px;
+            font-family: monospace;
+            z-index: 1000;
+        }
+        
+        @media (max-width: 600px) {
+            .query-panel { width: 280px; top: 70px; left: 8px; }
+            .controls-panel { top: 70px; right: 8px; }
+        }
+        
+        /* Drawing styles */
+        .draw-point {
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+<div class="status-bar" id="statusBar">🔄 Initializing...</div>
+
+<div class="controls-panel">
+    <button onclick="toggleQueryPanel()">🗂️ Query Panel</button>
+    <button onclick="toggleDefectHeatPanel()" style="background:#2980b9; color:white;">🛠️ Defect Heatmap</button>
+    <button onclick="toggleBuildingOverlapPanel()" style="background:#8e44ad; color:white;">🏢 Building Overlap</button>
+    <button onclick="clearAllLayers()" style="background:#ffc107;">🗑️ Clear All</button>
+    <button onclick="toggleLegend()">📖 Legend</button>
+    <button onclick="activateInfoMode()">ℹ️ Get Info</button>
+    <div class="layer-toggle-panel" id="layerTogglePanel">
+        <h6>Layer Visibility</h6>
+        <label><input type="checkbox" id="toggleRoads" checked onchange="toggleLayerVisibility('roads', this.checked)"> 🛣️ Roads</label>
+        <label><input type="checkbox" id="toggleTraffic" checked onchange="toggleLayerVisibility('traffic', this.checked)"> 🛠️ Defects</label>
+        <label><input type="checkbox" id="toggleBuildings" checked onchange="toggleLayerVisibility('buildings', this.checked)"> 🏢 Buildings</label>
+        <label><input type="checkbox" id="toggleBoundary" checked onchange="toggleLayerVisibility('boundary', this.checked)"> 🗺️ Boundary</label>
+    </div>
+</div>
+
+<div id="legend" class="legend">
+    <strong>Legend</strong><br>
+    <span style="background:#2ecc71;"></span> Green: Roads<br>
+    <span style="background:#e74c3c;"></span> Red: Defect Points<br>
+    <span style="background:#8e44ad;"></span> Purple: Buildings<br>
+    <span style="background:#3498db;"></span> Blue: District Boundaries<br>
+    <span style="background:#f1c40f;"></span> Yellow: Query Results<br>
+    <span style="background:#ff6b6b;"></span> 🌡️ Heatmap: Point Density
+</div>
+
+<div id="queryPanel" class="query-panel" style="display: block;">
+    <h4>🔍 Advanced Query Engine</h4>
+    
+    <label>Query Mode</label>
+    <select id="queryMode" onchange="updateUIMode()">
+        <option value="attribute">📋 Attribute Query</option>
+        <option value="expression">📝 Expression Query (SQL-like)</option>
+    </select>
+    
+    <label>Select Layer</label>
+    <select id="layerSelect" onchange="populateAttributeFields(); updateUIMode()">
+        <option value="roads">🛣️ Roads</option>
+        <option value="traffic">�️ Defect Points</option>
+        <option value="buildings">🏢 Buildings</option>
+        <option value="boundary">🗺️ District Boundaries</option>
+        <option value="all">📦 All Assets</option>
+    </select>
+    
+    <div id="attrSection">
+        <label>Attribute Field</label>
+        <select id="attrField"></select>
+        <label>Operator</label>
+        <select id="operator">
+            <option value="=">=</option>
+            <option value="!=">!=</option>
+            <option value=">">></option>
+            <option value="<"><</option>
+            <option value="LIKE">LIKE</option>
+            <option value="IN">IN</option>
+        </select>
+        <label>Value</label>
+        <input type="text" id="attrValue" placeholder="e.g., User1 or Good">
+    </div>
+    
+    <div id="exprSection" style="display: none;">
+        <label>SQL-like Expression</label>
+        <textarea id="expression" rows="3" placeholder="Examples:&#10;User = 'User1' AND CONDITION = 'Good'&#10;maxspeed > 50&#10;fclass IN ('primary','secondary')&#10;type = 'school' OR type = 'hospital'"></textarea>
+        <small>Supports: =, !=, >, <, >=, <=, AND, OR, IN, LIKE</small>
+    </div>
+    
+    <button onclick="runQuery()" class="btn-run">▶ Run Query</button>
+    <button onclick="closeQueryPanel()" class="btn-secondary-custom">Close Panel</button>
+</div>
+
+<div id="resultTable" class="results-table"></div>
+
+<div id="trafficHeatPanel" class="query-panel" style="display: none;">
+    <h4>�️ Defect Heatmap</h4>
+    
+    <label>Select Area Type</label>
+    <select id="trafficHeatAreaType" onchange="updateTrafficHeatAreaType()">
+        <option value="district">District Boundary</option>
+        <option value="draw">Draw Custom Area</option>
+        <option value="roadline">Select Road Line</option>
+    </select>
+    
+    <div id="trafficHeatDistrictSection">
+        <label>Select Boundary (District)</label>
+        <select id="trafficHeatBoundaryLayer">
+            <option value="Karachi Central">Karachi Central</option>
+            <option value="Karachi East">Karachi East</option>
+            <option value="Karachi South">Karachi South</option>
+            <option value="Karachi West">Karachi West</option>
+            <option value="Malir">Malir</option>
+        </select>
+    </div>
+    
+    <div id="trafficHeatDrawSection" style="display: none;">
+        <label>Draw Area Instructions</label>
+        <div style="font-size: 11px; margin-bottom: 8px;">
+            Click on map to add points. Double-click or right-click to finish drawing.
+        </div>
+        <button onclick="startDrawing('defect')" id="defectDrawBtn" class="btn-run" style="width: auto; padding: 4px 12px;">Start Drawing Area</button>
+        <button onclick="clearDrawing('defect')" id="defectClearDrawBtn" class="btn-secondary-custom" style="width: auto; padding: 4px 12px; display: none;">Clear Drawing</button>
+    </div>
+    
+    <div id="trafficHeatRoadLineSection" style="display: none;">
+        <label>Road Line Selection</label>
+        <div style="font-size: 11px; margin-bottom: 8px;">
+            Click the button and then click a road segment on the map to select it.
+        </div>
+        <button onclick="startRoadLineSelection()" id="roadLineBtn" class="btn-run" style="width: auto; padding: 4px 12px;">Select Road Segment</button>
+        <button onclick="clearRoadLineSelection()" id="clearRoadLineBtn" class="btn-secondary-custom" style="width: auto; padding: 4px 12px; display: none;">Clear Road Selection</button>
+    </div>
+    
+    <label>Buffer Distance (km)</label>
+    <input type="number" id="trafficHeatBufferDistance" min="0" step="0.1" value="0.5" placeholder="Buffer distance in kilometers">
+    
+    <label>Attribute Filter (optional)</label>
+    <select id="trafficHeatAttrField">
+        <option value="">Select Defect Attribute</option>
+    </select>
+    <select id="trafficHeatOperator">
+        <option value="=">=</option>
+        <option value="!=">!=</option>
+        <option value="LIKE">LIKE</option>
+    </select>
+    <input type="text" id="trafficHeatAttrValue" placeholder="Attribute value to filter">
+    <small style="display: block; margin-bottom: 8px; font-size: 11px; color: #555;">If a field and value are selected, only matching defect points will be shown in the heatmap.</small>
+    
+    <label>Selection Mode</label>
+    <select id="trafficHeatSelectionMode">
+        <option value="all">All defects inside buffer</option>
+        <option value="nearest">Nearest defect only</option>
+    </select>
+    
+    <button onclick="runTrafficHeatmap()" class="btn-run">▶ Run Defect Heatmap</button>
+    <button onclick="toggleDefectHeatPanel()" class="btn-secondary-custom">Close Panel</button>
+</div>
+
+<div id="buildingOverlapPanel" class="query-panel" style="display: none;">
+    <h4>🏢 Building Overlap</h4>
+    <label>Draw a polygon on the map</label>
+    <div style="font-size: 11px; margin-bottom: 8px;">
+        Use the draw tool to select a custom polygon. After drawing, click the button below to calculate the overlap with buildings.
+    </div>
+    <button onclick="startDrawing('building')" id="buildingDrawBtn" class="btn-run" style="width: auto; padding: 4px 12px;">Start Drawing Polygon</button>
+    <button onclick="clearDrawing('building')" id="buildingClearDrawBtn" class="btn-secondary-custom" style="width: auto; padding: 4px 12px; display: none;">Clear Drawing</button>
+    <button onclick="runBuildingOverlap()" class="btn-run" style="margin-top: 10px; width: 100%;">▶ Calculate Building Overlap</button>
+    <button onclick="toggleBuildingOverlapPanel()" class="btn-secondary-custom" style="margin-top: 8px; width: 100%;">Close Panel</button>
+    <div style="margin-top: 10px; font-size: 11px; color: #555;">
+        The overlap report will list matched buildings and the total intersected area.
+    </div>
+</div>
+
+<script>
+    // ==================== GLOBAL VARIABLES ====================
+    let map;
+    let currentRoadLayer = null;
+    let currentTrafficLayer = null;
+    let currentBuildingsLayer = null;
+    let currentBoundaryLayer = null;
+    let currentHeatLayer = null;
+    let currentHighlightLayer = null;
+    let drawnLayers = [];
+    let infoActive = false;
+    
+    // Drawing variables
+    let isDrawing = false;
+    let currentDrawPrefix = '';
+    let drawnPolygon = null;
+    let drawPoints = [];
+    let drawMarkers = [];
+    
+    // Road line selection variables
+    let roadLineSelectionActive = false;
+    let selectedRoadFeature = null;
+    let selectedRoadLineLayer = null;
+    
+    // GeoJSON Data Stores
+    let roadsData = null;
+    let trafficData = null;
+    let buildingsData = null;
+    let boundaryData = null;
+    
+    // ==================== UPDATE STATUS ====================
+    function updateStatus(message, isError = false) {
+        const statusBar = document.getElementById('statusBar');
+        statusBar.innerHTML = message;
+        if (isError) {
+            statusBar.style.color = '#f00';
+        } else {
+            statusBar.style.color = '#0f0';
+        }
+        console.log(message);
+    }
+    
+    // ==================== LOAD ALL GEOJSON FILES ====================
+    function convertEsriGeometry(geometry, geometryType) {
+        if (!geometry) return null;
+
+        const convertPair = (pair) => [pair[0], pair[1]];
+
+        if (geometryType === 'esriGeometryPoint' || (geometry.x !== undefined && geometry.y !== undefined)) {
+            return { type: 'Point', coordinates: [geometry.x, geometry.y] };
+        }
+
+        if (geometryType === 'esriGeometryMultipoint' || geometry.points) {
+            return { type: 'MultiPoint', coordinates: (geometry.points || []).map(convertPair) };
+        }
+
+        if (geometryType === 'esriGeometryPolyline' || geometry.paths) {
+            const paths = geometry.paths || [];
+            if (paths.length === 1) {
+                return { type: 'LineString', coordinates: paths[0].map(convertPair) };
+            }
+            return {
+                type: 'MultiLineString',
+                coordinates: paths.map(path => path.map(convertPair))
+            };
+        }
+
+        if (geometryType === 'esriGeometryPolygon' || geometry.rings) {
+            const rings = geometry.rings || [];
+            if (rings.length === 1) {
+                return { type: 'Polygon', coordinates: [rings[0].map(convertPair)] };
+            }
+            return {
+                type: 'MultiPolygon',
+                coordinates: rings.map(ring => [ring.map(convertPair)])
+            };
+        }
+
+        if (geometryType === 'esriGeometryEnvelope' || (geometry.xmin !== undefined && geometry.xmax !== undefined)) {
+            return {
+                type: 'Polygon',
+                coordinates: [[
+                    [geometry.xmin, geometry.ymin],
+                    [geometry.xmin, geometry.ymax],
+                    [geometry.xmax, geometry.ymax],
+                    [geometry.xmax, geometry.ymin],
+                    [geometry.xmin, geometry.ymin]
+                ]]
+            };
+        }
+
+        return null;
+    }
+
+    function isEsriJson(data) {
+        return data && Array.isArray(data.features) && !!data.geometryType;
+    }
+
+    function toGeoJsonFeatureCollection(data) {
+        if (!data) return { type: 'FeatureCollection', features: [] };
+        if (data.type === 'FeatureCollection' && Array.isArray(data.features)) return data;
+
+        if (isEsriJson(data)) {
+            return {
+                type: 'FeatureCollection',
+                features: data.features.map(feature => ({
+                    type: 'Feature',
+                    properties: feature.attributes || {},
+                    geometry: convertEsriGeometry(feature.geometry, data.geometryType)
+                })).filter(f => !!f.geometry)
+            };
+        }
+
+        // Fallback for unknown formats.
+        return { type: 'FeatureCollection', features: [] };
+    }
+
+    async function fetchFirstAvailableJson(candidates) {
+        for (const candidate of candidates) {
+            try {
+                const response = await fetch(candidate.path, { cache: 'no-store' });
+                if (!response.ok) continue;
+
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.includes('application/json') || contentType.includes('geo+json') || contentType.includes('text/plain') || contentType === '') {
+                const rawData = await response.json();
+                const data = toGeoJsonFeatureCollection(rawData);
+                    return { path: candidate.path, data };
+                }
+            } catch (error) {
+                // Keep trying next candidate.
+            }
+        }
+        return null;
+    }
+
+    async function loadAllGeoJSON() {
+        updateStatus('📂 Looking for GeoJSON files...');
+        if (window.location.protocol === 'file:') {
+            updateStatus('⚠️ Open this page through a local web server (http://...), not directly as a file.', true);
+        }
+        
+        // Try multiple possible paths for Live Server
+        const pathsToTry = [
+            { name: 'roads', path: 'data/roads.json' },
+            { name: 'roads', path: './data/roads.json' },
+            { name: 'roads', path: 'roads.json' },
+            { name: 'roads', path: '../data/roads.json' }
+        ];
+        
+        let basePath = '';
+        
+        // First, detect the correct base path
+        for (let test of pathsToTry) {
+            if (test.name === 'roads') {
+                try {
+                    const testResp = await fetch(test.path);
+                    if (testResp.ok) {
+                        basePath = test.path.replace('roads.json', '');
+                        updateStatus(`✅ Found files in: ${basePath || 'root folder'}`);
+                        break;
+                    }
+                } catch(e) {
+                    // Continue trying
+                }
+            }
+        }
+        
+        // If no path detected, try data folder as default
+        if (basePath === '') {
+            basePath = 'data/';
+            updateStatus(`⚠️ Using default path: ${basePath}`);
+        }
+        
+        const roadsCandidates = [
+            { path: basePath + 'roads.geojson' },
+            { path: basePath + 'roads.json' }
+        ];
+        const defectCandidates = [
+            { path: basePath + 'DEFECT.json' },
+            { path: basePath + 'defect.geojson' },
+            { path: basePath + 'defect.json' }
+        ];
+        const buildingsCandidates = [
+            { path: basePath + 'buildings.geojson' },
+            { path: basePath + 'buildings.json' }
+        ];
+        const boundaryCandidates = [
+            { path: basePath + 'Country_Boundary.geojson' },
+            { path: basePath + 'Country_Boundary.json' },
+            { path: basePath + 'country_boundary.geojson' },
+            { path: basePath + 'country_boundary.json' }
+        ];
+        
+        updateStatus(`📂 Loading from: ${basePath || './'}`);
+        
+        // Load all files with individual error handling
+        try {
+            updateStatus('📂 Loading roads (json/geojson)...');
+            const roadsResult = await fetchFirstAvailableJson(roadsCandidates);
+            if (roadsResult) {
+                roadsData = roadsResult.data;
+                updateStatus(`✅ Roads: ${roadsData.features?.length || 0} features`);
+            } else {
+                throw new Error('No matching roads file found');
+            }
+        } catch (error) {
+            updateStatus(`❌ Roads failed: ${error.message}`, true);
+            roadsData = { features: [] };
+        }
+        
+        try {
+            updateStatus('📂 Loading defect points (json/geojson)...');
+            const defectResult = await fetchFirstAvailableJson(defectCandidates);
+            if (defectResult) {
+                trafficData = defectResult.data;
+                updateStatus(`✅ Defects: ${trafficData.features?.length || 0} points`);
+            } else {
+                throw new Error('No matching defect file found');
+            }
+        } catch (error) {
+            updateStatus(`❌ Defects failed: ${error.message}`, true);
+            trafficData = { features: [] };
+        }
+        
+        try {
+            updateStatus('📂 Loading buildings (json/geojson)...');
+            const buildingsResult = await fetchFirstAvailableJson(buildingsCandidates);
+            if (buildingsResult) {
+                buildingsData = buildingsResult.data;
+                if (buildingsData.features) {
+                    updateStatus(`✅ Buildings: ${buildingsData.features.length} features`);
+                } else {
+                    throw new Error('Invalid format');
+                }
+            } else {
+                throw new Error('No matching buildings file found');
+            }
+        } catch (error) {
+            updateStatus(`❌ Buildings failed: ${error.message}`, true);
+            buildingsData = { features: [] };
+        }
+        
+        try {
+            updateStatus('📂 Loading boundary (json/geojson)...');
+            const boundaryResult = await fetchFirstAvailableJson(boundaryCandidates);
+            if (boundaryResult) {
+                boundaryData = boundaryResult.data;
+                updateStatus(`✅ Boundary: ${boundaryData.features?.length || 0} districts`);
+            } else {
+                throw new Error('No matching boundary file found');
+            }
+        } catch (error) {
+            updateStatus(`❌ Boundary failed: ${error.message}`, true);
+            boundaryData = { features: [] };
+        }
+        
+        // Initialize map and layers
+        initMap();
+        
+        const loadedCount = [
+            roadsData?.features?.length > 0,
+            trafficData?.features?.length > 0,
+            buildingsData?.features?.length > 0,
+            boundaryData?.features?.length > 0
+        ].filter(Boolean).length;
+        
+        if (loadedCount > 0) {
+            loadDefaultLayers();
+            populateAttributeFields();
+            populateTrafficHeatFields();
+            updateStatus(`✅ Ready! Loaded ${loadedCount}/4 layers`);
+        } else {
+            updateStatus(`❌ No data loaded! Check file paths`, true);
+            // Show helpful message
+            setTimeout(() => {
+                alert(`⚠️ Could not load map files!\n\nMake sure your folder structure is:\n\n${window.location.pathname.split('/').slice(0, -1).join('/')}/\n├── index.html\n└── data/\n    ├── roads.json (or roads.geojson)\n    ├── DEFECT.json (or defect.geojson)\n    ├── buildings.json (or buildings.geojson)\n    └── Country_Boundary.json (or Country_Boundary.geojson)\n\nEsri JSON is also supported.`);
+            }, 500);
+        }
+    }
+    
+    // ==================== INITIALIZE MAP ====================
+    function initMap() {
+        map = L.map('map').setView([24.86, 67.00], 12);
+        
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> & CartoDB',
+            subdomains: 'abcd',
+            maxZoom: 19
+        }).addTo(map);
+        
+        map.on('click', function(e) {
+            if(infoActive) {
+                L.popup().setLatLng(e.latlng).setContent(`📍 ${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`).openOn(map);
+                infoActive = false;
+            }
+        });
+    }
+    
+    // ==================== LOAD DEFAULT LAYERS ====================
+    function loadDefaultLayers() {
+        // Roads Layer
+        if (roadsData && roadsData.features && roadsData.features.length > 0) {
+            currentRoadLayer = L.geoJSON(roadsData, {
+                style: { color: '#2ecc71', weight: 2, opacity: 0.7 },
+                onEachFeature: (f, layer) => {
+                    let popup = `<b>Road</b><br>Name: ${f.properties.name || 'N/A'}<br>Type: ${f.properties.fclass || 'N/A'}<br>Speed: ${f.properties.maxspeed || 'N/A'}<br>Condition: ${f.properties.CONDITION || 'N/A'}<br>User: ${f.properties.User || 'N/A'}`;
+                    layer.bindPopup(popup);
+                }
+            }).addTo(map);
+            drawnLayers.push(currentRoadLayer);
+        }
+        
+        // Defect Points Layer
+        if (trafficData && trafficData.features && trafficData.features.length > 0) {
+            currentTrafficLayer = L.geoJSON(trafficData, {
+                pointToLayer: (f, latlng) => L.circleMarker(latlng, { radius: 5, color: '#e74c3c', fillColor: '#e74c3c', fillOpacity: 0.7 }),
+                onEachFeature: (f, layer) => {
+                    let popup = `<b>Defect Point</b><br>Type: ${f.properties.fclass || 'N/A'}<br>Name: ${f.properties.name || 'N/A'}`;
+                    layer.bindPopup(popup);
+                }
+            }).addTo(map);
+            drawnLayers.push(currentTrafficLayer);
+        }
+        
+        // Buildings Layer
+        if (buildingsData && buildingsData.features && buildingsData.features.length > 0) {
+            currentBuildingsLayer = L.geoJSON(buildingsData, {
+                style: { color: '#8e44ad', weight: 1.5, fillColor: '#9b59b6', fillOpacity: 0.5 },
+                onEachFeature: (f, layer) => {
+                    let props = f.properties;
+                    let popup = `<b>🏢 Building</b><br>`;
+                    popup += `Name: ${props.name || 'N/A'}<br>`;
+                    popup += `Type: ${props.fclass || props.type || 'N/A'}<br>`;
+                    if (props.osm_id) popup += `OSM ID: ${props.osm_id}<br>`;
+                    layer.bindPopup(popup);
+                }
+            }).addTo(map);
+            drawnLayers.push(currentBuildingsLayer);
+        }
+        
+        // Boundary Layer
+        if (boundaryData && boundaryData.features && boundaryData.features.length > 0) {
+            currentBoundaryLayer = L.geoJSON(boundaryData, {
+                style: { color: '#3498db', weight: 2, fillColor: '#3498db', fillOpacity: 0.1 },
+                onEachFeature: (f, layer) => {
+                    let name = f.properties.NAME_3 || f.properties.NAME_2 || f.properties.NAME_1 || 'District';
+                    layer.bindPopup(`<b>${name}</b><br>District Level`);
+                }
+            }).addTo(map);
+            drawnLayers.push(currentBoundaryLayer);
+        }
+
+        applyLayerToggles();
+    }
+
+    function getLayerByType(layerType) {
+        if (layerType === 'roads') return currentRoadLayer;
+        if (layerType === 'traffic') return currentTrafficLayer;
+        if (layerType === 'buildings') return currentBuildingsLayer;
+        if (layerType === 'boundary') return currentBoundaryLayer;
+        return null;
+    }
+
+    function getToggleState(layerType) {
+        const idMap = {
+            roads: 'toggleRoads',
+            traffic: 'toggleTraffic',
+            buildings: 'toggleBuildings',
+            boundary: 'toggleBoundary'
+        };
+        const checkbox = document.getElementById(idMap[layerType]);
+        return checkbox ? checkbox.checked : true;
+    }
+
+    function toggleLayerVisibility(layerType, isVisible) {
+        const layer = getLayerByType(layerType);
+        if (!layer || !map) return;
+
+        if (isVisible) {
+            if (!map.hasLayer(layer)) map.addLayer(layer);
+        } else {
+            if (map.hasLayer(layer)) map.removeLayer(layer);
+        }
+    }
+
+    function applyLayerToggles() {
+        ['roads', 'traffic', 'buildings', 'boundary'].forEach((layerType) => {
+            toggleLayerVisibility(layerType, getToggleState(layerType));
+        });
+    }
+    
+    // ==================== POPULATE ATTRIBUTE FIELDS ====================
+    function populateAttributeFields() {
+        const layerType = document.getElementById('layerSelect').value;
+        let sampleFeature = null;
+        
+        if (layerType === 'roads' && roadsData?.features?.length) sampleFeature = roadsData.features[0];
+        else if (layerType === 'traffic' && trafficData?.features?.length) sampleFeature = trafficData.features[0];
+        else if (layerType === 'buildings' && buildingsData?.features?.length) sampleFeature = buildingsData.features[0];
+        else if (layerType === 'boundary' && boundaryData?.features?.length) sampleFeature = boundaryData.features[0];
+        
+        const attrSelect = document.getElementById('attrField');
+        attrSelect.innerHTML = '<option value="">Select Field</option>';
+        
+        if (sampleFeature && sampleFeature.properties) {
+            for (let key in sampleFeature.properties) {
+                if (sampleFeature.properties.hasOwnProperty(key)) {
+                    let option = document.createElement('option');
+                    option.value = key;
+                    option.textContent = `${key}`;
+                    attrSelect.appendChild(option);
+                }
+            }
+        } else {
+            let fallbackFields = layerType === 'roads' ? ['User', 'CONDITION', 'fclass', 'maxspeed', 'name'] :
+                                layerType === 'traffic' ? ['fclass', 'name', 'osm_id'] :
+                                layerType === 'buildings' ? ['name', 'fclass', 'type', 'osm_id'] :
+                                ['NAME_3', 'NAME_2', 'NAME_1'];
+            fallbackFields.forEach(field => {
+                let option = document.createElement('option');
+                option.value = field;
+                option.textContent = field;
+                attrSelect.appendChild(option);
+            });
+        }
+    }
+
+    function populateTrafficHeatFields() {
+        const attrSelect = document.getElementById('trafficHeatAttrField');
+        attrSelect.innerHTML = '<option value="">Select Defect Attribute</option>';
+        let fields = [];
+
+        if (trafficData?.features?.length) {
+            const sampleFeature = trafficData.features[0];
+            if (sampleFeature.properties) {
+                fields = Object.keys(sampleFeature.properties);
+            }
+        }
+
+        if (!fields.length) {
+            fields = ['fclass', 'name', 'osm_id', 'type'];
+        }
+
+        fields.forEach(field => {
+            let option = document.createElement('option');
+            option.value = field;
+            option.textContent = field;
+            attrSelect.appendChild(option);
+        });
+    }
+    
+    // ==================== QUERY EXECUTION ====================
+    async function runQuery() {
+        const mode = document.getElementById('queryMode').value;
+        const layerType = document.getElementById('layerSelect').value;
+        
+        let features = [];
+        if (layerType === 'roads' && roadsData) features = roadsData.features || [];
+        else if (layerType === 'traffic' && trafficData) features = trafficData.features || [];
+        else if (layerType === 'buildings' && buildingsData) features = buildingsData.features || [];
+        else if (layerType === 'boundary' && boundaryData) features = boundaryData.features || [];
+        
+        let results = [];
+        
+        if (mode === 'attribute') {
+            const field = document.getElementById('attrField').value;
+            const operator = document.getElementById('operator').value;
+            const value = document.getElementById('attrValue').value;
+            
+            if (!field) { alert('Please select an attribute field'); return; }
+            if (!value && value !== '0') { alert('Please enter a value'); return; }
+            
+            results = features.filter(f => {
+                let propVal = f.properties[field];
+                if (propVal === undefined || propVal === null) return false;
+                propVal = String(propVal).toLowerCase();
+                const searchVal = String(value).toLowerCase();
+                
+                switch(operator) {
+                    case '=': return propVal === searchVal;
+                    case '!=': return propVal !== searchVal;
+                    case '>': return Number(propVal) > Number(value);
+                    case '<': return Number(propVal) < Number(value);
+                    case 'LIKE': return propVal.includes(searchVal);
+                    case 'IN': return searchVal.split(',').map(v => v.trim()).includes(propVal);
+                    default: return false;
+                }
+            });
+        } 
+        else if (mode === 'expression') {
+            const expr = document.getElementById('expression').value;
+            if (!expr) { alert('Please enter an expression'); return; }
+            results = features.filter(f => evaluateExpression(expr, f.properties));
+        }
+        
+        displayResults(results, layerType);
+        highlightResults(results, layerType);
+    }
+    
+    function evaluateSingleCondition(condition, properties) {
+        const conditionRegex = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(=|!=|>=|<=|>|<|LIKE|IN)\s*(.+?)\s*$/i;
+        const match = condition.match(conditionRegex);
+        if (!match) return false;
+
+        const fieldName = match[1];
+        const operator = match[2].toUpperCase();
+        const rawRight = match[3];
+
+        const propKey = Object.keys(properties || {}).find(k => k.toLowerCase() === fieldName.toLowerCase());
+        if (!propKey) return false;
+
+        const leftVal = properties[propKey];
+        const leftStr = leftVal == null ? '' : String(leftVal);
+        const leftLower = leftStr.toLowerCase();
+
+        if (operator === 'IN') {
+            const inMatch = rawRight.match(/^\((.*)\)$/);
+            if (!inMatch) return false;
+            const values = inMatch[1]
+                .split(',')
+                .map(v => v.trim().replace(/^['"]|['"]$/g, '').toLowerCase());
+            return values.includes(leftLower);
+        }
+
+        let rightVal = rawRight.trim().replace(/^['"]|['"]$/g, '');
+        const rightLower = rightVal.toLowerCase();
+
+        if (operator === 'LIKE') {
+            // Supports % wildcard anywhere in the search text.
+            const pattern = rightLower
+                .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                .replace(/%/g, '.*');
+            return new RegExp(`^${pattern}$`, 'i').test(leftStr);
+        }
+
+        const leftNum = Number(leftVal);
+        const rightNum = Number(rightVal);
+        const canCompareAsNumber = !Number.isNaN(leftNum) && !Number.isNaN(rightNum);
+
+        if (operator === '=' || operator === '!=') {
+            const isEqual = canCompareAsNumber ? leftNum === rightNum : leftLower === rightLower;
+            return operator === '=' ? isEqual : !isEqual;
+        }
+
+        if (!canCompareAsNumber) return false;
+        if (operator === '>') return leftNum > rightNum;
+        if (operator === '<') return leftNum < rightNum;
+        if (operator === '>=') return leftNum >= rightNum;
+        if (operator === '<=') return leftNum <= rightNum;
+        return false;
+    }
+
+    function evaluateExpression(expr, properties) {
+        try {
+            const orParts = expr.split(/\s+OR\s+/i);
+            return orParts.some(orPart => {
+                const andParts = orPart.split(/\s+AND\s+/i);
+                return andParts.every(andPart => evaluateSingleCondition(andPart, properties));
+            });
+        } catch(e) {
+            console.warn('Expression error:', e);
+            return false;
+        }
+    }
+
+    function getGeometryHeatCoords(geometry) {
+        if (!geometry) return [];
+
+        const sampleEvery = 5;
+        if (geometry.type === 'Point') {
+            return [geometry.coordinates];
+        }
+        if (geometry.type === 'MultiPoint') {
+            return geometry.coordinates || [];
+        }
+        if (geometry.type === 'LineString') {
+            return (geometry.coordinates || []).filter((_, idx) => idx % sampleEvery === 0);
+        }
+        if (geometry.type === 'MultiLineString') {
+            return (geometry.coordinates || []).flatMap(line =>
+                (line || []).filter((_, idx) => idx % sampleEvery === 0)
+            );
+        }
+        if (geometry.type === 'Polygon') {
+            const center = getPolygonCentroid(geometry);
+            return [center];
+        }
+        if (geometry.type === 'MultiPolygon') {
+            const center = getPolygonCentroid(geometry);
+            return [center];
+        }
+        return [];
+    }
+    
+    async function runSpatialQuery(layerTypeOverride = null, idPrefix = '') {
+        const boundaryType = document.getElementById(idPrefix ? idPrefix + 'AreaType' : 'boundaryType').value;
+        const relation = document.getElementById(idPrefix ? idPrefix + 'SpatialRelation' : 'spatialRelation') ? document.getElementById(idPrefix ? idPrefix + 'SpatialRelation' : 'spatialRelation').value : 'WITHIN';
+        const layerType = layerTypeOverride || document.getElementById('layerSelect').value;
+        
+        let selectedBoundary = null;
+        
+        if (boundaryType === 'district') {
+            const boundaryName = document.getElementById(idPrefix ? idPrefix + 'BoundaryLayer' : 'boundaryLayer').value;
+            
+            if (!boundaryData || !boundaryData.features) {
+                alert('Boundary data not loaded');
+                return;
+            }
+            
+            for (let feature of boundaryData.features) {
+                let name = feature.properties.NAME_3 || feature.properties.NAME_2 || feature.properties.NAME_1;
+                if (name && name.toLowerCase().includes(boundaryName.toLowerCase())) {
+                    selectedBoundary = feature;
+                    break;
+                }
+            }
+            
+            if (!selectedBoundary) {
+                alert(`District "${boundaryName}" not found`);
+                return;
+            }
+            
+            // Clear any drawn area
+            if (window.drawnAreaLayer) {
+                map.removeLayer(window.drawnAreaLayer);
+                drawnLayers = drawnLayers.filter(layer => layer !== window.drawnAreaLayer);
+            }
+            
+            if (window.selectedBoundaryLayer) map.removeLayer(window.selectedBoundaryLayer);
+            window.selectedBoundaryLayer = L.geoJSON(selectedBoundary, {
+                style: { color: '#27ae60', weight: 4, fillColor: '#2ecc71', fillOpacity: 0.3 }
+            }).addTo(map);
+            drawnLayers.push(window.selectedBoundaryLayer);
+            map.fitBounds(window.selectedBoundaryLayer.getBounds());
+            
+        } else if (boundaryType === 'draw') {
+            if (!drawnPolygon) {
+                alert('Please draw an area first by clicking "Start Drawing Area" and clicking points on the map.');
+                return;
+            }
+            
+            selectedBoundary = drawnPolygon;
+            
+            // Clear district boundary if shown
+            if (window.selectedBoundaryLayer) {
+                map.removeLayer(window.selectedBoundaryLayer);
+                drawnLayers = drawnLayers.filter(layer => layer !== window.selectedBoundaryLayer);
+            }
+            
+            // drawnAreaLayer is already on the map
+        } else if (boundaryType === 'roadline') {
+            if (!selectedRoadFeature) {
+                alert('Please select a road line first.');
+                return;
+            }
+            selectedBoundary = selectedRoadFeature;
+            
+            // Clear district boundary if shown
+            if (window.selectedBoundaryLayer) {
+                map.removeLayer(window.selectedBoundaryLayer);
+                drawnLayers = drawnLayers.filter(layer => layer !== window.selectedBoundaryLayer);
+            }
+        }
+        
+        let featuresToCheck = [];
+        if (layerType === 'traffic' && trafficData?.features) {
+            featuresToCheck = trafficData.features;
+        } else {
+            alert('Defect heatmap only supports the defect layer.');
+            return;
+        }
+        
+        const attrField = document.getElementById(idPrefix ? idPrefix + 'AttrField' : 'attrField').value;
+        const attrOperator = document.getElementById(idPrefix ? idPrefix + 'Operator' : 'operator').value;
+        const attrValue = document.getElementById(idPrefix ? idPrefix + 'AttrValue' : 'attrValue').value;
+
+        if (attrField && (attrValue === '' || attrValue === null)) {
+            alert('Please enter a value for the selected defect attribute filter.');
+            return;
+        }
+
+        if (attrField && attrValue) {
+            const compareValue = String(attrValue).toLowerCase();
+            featuresToCheck = featuresToCheck.filter(feature => {
+                const propVal = feature.properties ? feature.properties[attrField] : undefined;
+                if (propVal === undefined || propVal === null) return false;
+                const propString = String(propVal).toLowerCase();
+                switch (attrOperator) {
+                    case '!=': return propString !== compareValue;
+                    case 'LIKE': return propString.includes(compareValue);
+                    default: return propString === compareValue;
+                }
+            });
+        }
+
+        if (!featuresToCheck.length) {
+            alert('No defect features match the selected attribute filter.');
+            return;
+        }
+
+        const bufferDistance = Number(document.getElementById(idPrefix ? idPrefix + 'BufferDistance' : 'bufferDistance').value) || 0;
+        const selectionMode = document.getElementById(idPrefix ? idPrefix + 'SelectionMode' : 'selectionMode').value;
+        const turfBoundaryFeature = turf.feature(selectedBoundary.geometry);
+        const selectionFeature = bufferDistance > 0 ? turf.buffer(turfBoundaryFeature, bufferDistance, { units: 'kilometers' }) : turfBoundaryFeature;
+        const pointsInside = [];
+        const heatPoints = [];
+        
+        featuresToCheck.forEach(feature => {
+            if (!feature.geometry) return;
+
+            let isInside = false;
+            try {
+                if (feature.geometry.type === 'Point') {
+                    if (relation === 'WITHIN') {
+                        isInside = turf.booleanPointInPolygon(turf.point(feature.geometry.coordinates), selectionFeature);
+                    } else {
+                        isInside = turf.booleanPointInPolygon(turf.point(feature.geometry.coordinates), selectionFeature);
+                    }
+                } else {
+                    isInside = turf.booleanIntersects(turf.feature(feature.geometry), selectionFeature);
+                }
+            } catch (e) {
+                isInside = false;
+            }
+
+            if (isInside) {
+                pointsInside.push(feature);
+            }
+        });
+
+        if (selectionMode === 'nearest' && pointsInside.length > 1) {
+            const referencePoint = turf.centroid(selectionFeature).geometry.coordinates;
+            pointsInside.sort((a, b) => {
+                const aCoord = getGeometryHeatCoords(a.geometry)[0] || referencePoint;
+                const bCoord = getGeometryHeatCoords(b.geometry)[0] || referencePoint;
+                const distA = turf.distance(turf.point(aCoord), turf.point(referencePoint), { units: 'kilometers' });
+                const distB = turf.distance(turf.point(bCoord), turf.point(referencePoint), { units: 'kilometers' });
+                return distA - distB;
+            });
+            pointsInside.splice(1); // keep only the nearest feature
+        }
+
+        pointsInside.forEach(feature => {
+            const candidateCoords = getGeometryHeatCoords(feature.geometry);
+            candidateCoords.forEach(coords => {
+                if (!Array.isArray(coords) || coords.length < 2) return;
+                try {
+                    const insidePoint = turf.booleanPointInPolygon(turf.point([coords[0], coords[1]]), selectionFeature);
+                    if (insidePoint) heatPoints.push([coords[1], coords[0], 1.0]);
+                } catch (e) {}
+            });
+        });
+        
+        if (heatPoints.length === 0) {
+            const boundaryName = boundaryType === 'district' ? document.getElementById(idPrefix ? idPrefix + 'BoundaryLayer' : 'boundaryLayer').value : 'drawn area';
+            alert(`No defect features found inside ${boundaryName} with current buffer and selection mode.`);
+            return;
+        }
+        
+        displayResults(pointsInside, layerType);
+        
+        if (currentHeatLayer) map.removeLayer(currentHeatLayer);
+        currentHeatLayer = L.heatLayer(heatPoints, { radius: 25, blur: 15 }).addTo(map);
+        drawnLayers.push(currentHeatLayer);
+        
+        highlightResults(pointsInside, layerType);
+        const selectionModeText = selectionMode === 'nearest' ? 'nearest defect only' : 'all defects';
+        const boundaryName = boundaryType === 'district' ? document.getElementById(idPrefix ? idPrefix + 'BoundaryLayer' : 'boundaryLayer').value : 'drawn area';
+        const bufferDistanceText = bufferDistance > 0 ? ` with ${bufferDistance} km buffer` : '';
+        alert(`🔥 Defect heatmap created! ${pointsInside.length} ${selectionModeText} found in ${boundaryName}${bufferDistanceText}.`);
+    }
+    
+    function getLineCentroid(geometry) {
+        if (!geometry || !geometry.coordinates) return [67.00, 24.86];
+        if (geometry.type === 'LineString') {
+            const coords = geometry.coordinates;
+            let sumX = 0, sumY = 0;
+            coords.forEach(c => { sumX += c[0]; sumY += c[1]; });
+            return [sumX / coords.length, sumY / coords.length];
+        }
+        return [67.00, 24.86];
+    }
+    
+    function getPolygonCentroid(geometry) {
+        if (!geometry) return [67.00, 24.86];
+        try {
+            if (geometry.type === 'Polygon') {
+                const coords = geometry.coordinates[0];
+                let sumX = 0, sumY = 0;
+                coords.forEach(c => { sumX += c[0]; sumY += c[1]; });
+                return [sumX / coords.length, sumY / coords.length];
+            } else if (geometry.type === 'MultiPolygon') {
+                const coords = geometry.coordinates[0][0];
+                let sumX = 0, sumY = 0;
+                coords.forEach(c => { sumX += c[0]; sumY += c[1]; });
+                return [sumX / coords.length, sumY / coords.length];
+            }
+        } catch(e) {}
+        return [67.00, 24.86];
+    }
+    
+    function displayResults(features, layerType) {
+        const tableDiv = document.getElementById('resultTable');
+        tableDiv.style.display = 'block';
+        
+        if (!features || features.length === 0) {
+            tableDiv.innerHTML = '<strong>No results found.</strong><br><button onclick="document.getElementById(\'resultTable\').style.display=\'none\'">Close</button>';
+            return;
+        }
+        
+        let html = `<strong>✅ Query Results (${features.length} records):</strong><br>`;
+        html += `<table><tr><th>#</th>`;
+        
+        if (layerType === 'roads') html += `<th>Name</th><th>Type</th><th>Condition</th><th>User</th>`;
+        else if (layerType === 'traffic') html += `<th>Type</th><th>Name</th><th>OSM ID</th>`;
+        else if (layerType === 'buildings') html += `<th>Name</th><th>Type</th><th>Fclass</th>`;
+        else html += `<th>District</th><th>Region</th>`;
+        html += `</tr>`;
+        
+        features.slice(0, 50).forEach((f, idx) => {
+            const props = f.properties;
+            if (layerType === 'roads') {
+                html += `<tr><td>${idx+1}</td><td>${props.name || props.fclass || 'N/A'}</td><td>${props.fclass || 'N/A'}</td><td>${props.CONDITION || 'N/A'}</td><td>${props.User || props.maxspeed || 'N/A'}</td></tr>`;
+            } else if (layerType === 'traffic') {
+                html += `<tr><td>${idx+1}</td><td>${props.fclass || 'N/A'}</td><td>${props.name || 'N/A'}</td><td>${props.osm_id || '-'}</td></tr>`;
+            } else if (layerType === 'buildings') {
+                html += `<tr><td>${idx+1}</td><td>${props.name || 'N/A'}</td><td>${props.type || props.fclass || 'N/A'}</td><td>${props.fclass || 'N/A'}</td></tr>`;
+            } else {
+                html += `<tr><td>${idx+1}</td><td>${props.NAME_3 || props.NAME_2 || props.NAME_1 || 'N/A'}</td><td>${props.NAME_1 || 'N/A'}</td></tr>`;
+            }
+        });
+        
+        if (features.length > 50) html += `<tr><td colspan="5">... and ${features.length - 50} more records</td></tr>`;
+        html += `</table><button onclick="document.getElementById('resultTable').style.display='none'" style="margin-top:10px;padding:5px 10px;">Close</button>`;
+        tableDiv.innerHTML = html;
+    }
+    
+    function highlightResults(features, layerType) {
+        if (currentHighlightLayer) map.removeLayer(currentHighlightLayer);
+        if (!features || features.length === 0) return;
+        
+        let style, pointToLayer;
+        
+        if (layerType === 'roads') {
+            style = { color: '#f1c40f', weight: 4, opacity: 1 };
+        } else if (layerType === 'traffic') {
+            pointToLayer = (f, latlng) => L.circleMarker(latlng, { radius: 8, color: '#f1c40f', fillColor: '#f39c12', fillOpacity: 0.9 });
+        } else {
+            style = { color: '#f1c40f', weight: 4, fillColor: '#f39c12', fillOpacity: 0.6 };
+        }
+        
+        currentHighlightLayer = L.geoJSON({ type: "FeatureCollection", features: features }, {
+            style: style,
+            pointToLayer: pointToLayer
+        }).addTo(map);
+        drawnLayers.push(currentHighlightLayer);
+        
+        try { if (currentHighlightLayer.getBounds().isValid()) map.fitBounds(currentHighlightLayer.getBounds()); } catch(e) {}
+    }
+    
+    function clearAllLayers() {
+        drawnLayers.forEach(layer => { if (map.hasLayer(layer)) map.removeLayer(layer); });
+        drawnLayers = [];
+        currentHeatLayer = null;
+        currentHighlightLayer = null;
+        window.selectedBoundaryLayer = null;
+        window.drawnAreaLayer = null;
+        drawnPolygon = null;
+        if (selectedRoadLineLayer) {
+            map.removeLayer(selectedRoadLineLayer);
+            selectedRoadLineLayer = null;
+        }
+        selectedRoadFeature = null;
+        clearDrawing(); // Clear any drawing state
+        clearRoadLineSelection();
+        loadDefaultLayers();
+        document.getElementById('resultTable').style.display = 'none';
+        updateStatus('✅ All layers cleared and reloaded');
+        setTimeout(() => updateStatus(`✅ Ready!`), 2000);
+    }
+    
+    function toggleQueryPanel() {
+        const panel = document.getElementById('queryPanel');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
+    
+    function closeQueryPanel() { document.getElementById('queryPanel').style.display = 'none'; }
+    function toggleLegend() { const leg = document.getElementById('legend'); leg.style.display = leg.style.display === 'none' ? 'block' : 'none'; }
+    function activateInfoMode() { infoActive = true; alert('Click on map to get coordinates'); setTimeout(() => { infoActive = false; }, 15000); }
+    function updateUIMode() {
+        const mode = document.getElementById('queryMode').value;
+        document.getElementById('attrSection').style.display = mode === 'attribute' ? 'block' : 'none';
+        document.getElementById('exprSection').style.display = mode === 'expression' ? 'block' : 'none';
+    }
+    
+    function updateBoundaryType() {
+        const boundaryType = document.getElementById('boundaryType').value;
+        document.getElementById('districtSection').style.display = boundaryType === 'district' ? 'block' : 'none';
+        document.getElementById('drawSection').style.display = boundaryType === 'draw' ? 'block' : 'none';
+        document.getElementById('roadLineSection').style.display = boundaryType === 'roadline' ? 'block' : 'none';
+        
+        // Clear any existing drawn or road selection when switching
+        clearDrawing();
+        clearRoadLineSelection();
+    }
+    
+    function toggleDefectHeatPanel() {
+        const panel = document.getElementById('trafficHeatPanel');
+        const otherPanel = document.getElementById('buildingOverlapPanel');
+        if (otherPanel.style.display === 'block') otherPanel.style.display = 'none';
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        if (panel.style.display === 'block') {
+            updateTrafficHeatAreaType();
+        }
+    }
+    
+    function updateTrafficHeatAreaType() {
+        const areaType = document.getElementById('trafficHeatAreaType').value;
+        document.getElementById('trafficHeatDistrictSection').style.display = areaType === 'district' ? 'block' : 'none';
+        document.getElementById('trafficHeatDrawSection').style.display = areaType === 'draw' ? 'block' : 'none';
+        document.getElementById('trafficHeatRoadLineSection').style.display = areaType === 'roadline' ? 'block' : 'none';
+        
+        clearDrawing('defect');
+        clearRoadLineSelection();
+    }
+    
+    async function runTrafficHeatmap() {
+        await runSpatialQuery('traffic', 'trafficHeat');
+    }
+    
+    function toggleBuildingOverlapPanel() {
+        const panel = document.getElementById('buildingOverlapPanel');
+        const otherPanel = document.getElementById('trafficHeatPanel');
+        if (otherPanel.style.display === 'block') otherPanel.style.display = 'none';
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        if (panel.style.display === 'block') {
+            clearDrawing('building');
+            if (window.selectedBoundaryLayer) {
+                map.removeLayer(window.selectedBoundaryLayer);
+                drawnLayers = drawnLayers.filter(layer => layer !== window.selectedBoundaryLayer);
+                window.selectedBoundaryLayer = null;
+            }
+            clearRoadLineSelection();
+        }
+    }
+    
+    function runBuildingOverlap() {
+        if (!drawnPolygon) {
+            alert('Please draw a polygon first to calculate building overlap.');
+            return;
+        }
+        if (!buildingsData?.features?.length) {
+            alert('Building data is not loaded.');
+            return;
+        }
+
+        const overlaps = [];
+        const totalArea = buildingsData.features.reduce((sum, feature) => {
+            if (!feature.geometry) return sum;
+            try {
+                const intersection = turf.intersect(drawnPolygon, turf.feature(feature.geometry));
+                if (intersection) {
+                    const overlapArea = turf.area(intersection);
+                    overlaps.push({ feature, overlapArea });
+                    return sum + overlapArea;
+                }
+            } catch (e) {
+                console.warn('Overlap error', e);
+            }
+            return sum;
+        }, 0);
+
+        if (!overlaps.length) {
+            alert('No buildings overlap the drawn polygon.');
+            return;
+        }
+
+        const features = overlaps.map(item => item.feature);
+        displayResults(features, 'buildings');
+
+        if (currentHighlightLayer) map.removeLayer(currentHighlightLayer);
+        currentHighlightLayer = L.geoJSON({ type: 'FeatureCollection', features: features }, {
+            style: { color: '#f1c40f', weight: 3, fillColor: '#f39c12', fillOpacity: 0.5 }
+        }).addTo(map);
+        drawnLayers.push(currentHighlightLayer);
+
+        const totalAreaKm2 = (totalArea / 1000000).toFixed(4);
+        alert(`🏢 Building overlap calculated: ${overlaps.length} buildings overlapped, total area ${totalAreaKm2} km².`);
+    }
+    
+    function startRoadLineSelection() {
+        if (!map) return;
+        roadLineSelectionActive = true;
+        selectedRoadFeature = null;
+        updateStatus('🛣️ Click a road line on the map to select it.', false);
+        map.on('click', handleRoadLineClick);
+    }
+    
+    function handleRoadLineClick(e) {
+        if (!roadLineSelectionActive) return;
+        if (!roadsData?.features) {
+            alert('Road data is not loaded.');
+            return;
+        }
+        
+        const clickPoint = turf.point([e.latlng.lng, e.latlng.lat]);
+        let bestFeature = null;
+        let bestDistance = Infinity;
+        roadsData.features.forEach(feature => {
+            if (!feature.geometry) return;
+            try {
+                const distance = turf.pointToLineDistance(clickPoint, turf.feature(feature.geometry), { units: 'kilometers' });
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    bestFeature = feature;
+                }
+            } catch (err) {
+                return;
+            }
+        });
+        
+        if (!bestFeature || bestDistance > 0.05) {
+            alert('No nearby road found. Try clicking closer to a road line.');
+            return;
+        }
+        
+        selectedRoadFeature = bestFeature;
+        roadLineSelectionActive = false;
+        map.off('click', handleRoadLineClick);
+        
+        if (selectedRoadLineLayer) map.removeLayer(selectedRoadLineLayer);
+        selectedRoadLineLayer = L.geoJSON(selectedRoadFeature, {
+            style: { color: '#e67e22', weight: 6, opacity: 0.85 }
+        }).addTo(map);
+        drawnLayers.push(selectedRoadLineLayer);
+        
+        document.getElementById('clearRoadLineBtn').style.display = 'inline-block';
+        updateStatus(`✅ Road line selected (distance ${bestDistance.toFixed(3)} km). Run query to apply buffer.`, false);
+    }
+    
+    function clearRoadLineSelection() {
+        roadLineSelectionActive = false;
+        selectedRoadFeature = null;
+        if (selectedRoadLineLayer) {
+            map.removeLayer(selectedRoadLineLayer);
+            selectedRoadLineLayer = null;
+        }
+        map.off('click', handleRoadLineClick);
+        document.getElementById('clearRoadLineBtn').style.display = 'none';
+        updateStatus('🧹 Road line selection cleared.', false);
+    }
+    
+    function startDrawing(prefix = '') {
+        if (isDrawing) {
+            finishDrawing();
+            return;
+        }
+        
+        isDrawing = true;
+        currentDrawPrefix = prefix;
+        drawPoints = [];
+        drawMarkers = [];
+        
+        const drawBtn = document.getElementById(prefix ? `${prefix}DrawBtn` : 'drawBtn');
+        const clearBtn = document.getElementById(prefix ? `${prefix}ClearDrawBtn` : 'clearDrawBtn');
+        if (drawBtn) drawBtn.innerHTML = 'Finish Drawing';
+        if (clearBtn) clearBtn.style.display = 'inline-block';
+        updateStatus('🖊️ Click on map to draw area. Double-click or right-click to finish.', false);
+        
+        // Add click handler to map
+        map.on('click', onMapClick);
+        map.on('dblclick', finishDrawing);
+        map.on('contextmenu', finishDrawing);
+        
+        // Prevent map zoom on double-click
+        map.doubleClickZoom.disable();
+    }
+    
+    function onMapClick(e) {
+        if (!isDrawing) return;
+        
+        const latlng = e.latlng;
+        drawPoints.push([latlng.lng, latlng.lat]); // GeoJSON format [lng, lat]
+        
+        // Add marker
+        const marker = L.marker(latlng, {
+            icon: L.divIcon({
+                className: 'draw-point',
+                html: '<div style="background: #e74c3c; border: 2px solid white; border-radius: 50%; width: 12px; height: 12px;"></div>',
+                iconSize: [12, 12]
+            })
+        }).addTo(map);
+        drawMarkers.push(marker);
+        
+        updateStatus(`🖊️ Added point ${drawPoints.length}. Double-click or right-click to finish.`, false);
+    }
+    
+    function finishDrawing() {
+        if (!isDrawing || drawPoints.length < 3) {
+            if (drawPoints.length < 3) {
+                alert('Please draw at least 3 points to create an area.');
+                clearDrawing();
+            }
+            return;
+        }
+        
+        // Close the polygon
+        drawPoints.push(drawPoints[0]);
+        
+        // Create polygon
+        drawnPolygon = {
+            type: 'Feature',
+            geometry: {
+                type: 'Polygon',
+                coordinates: [drawPoints]
+            },
+            properties: { name: 'Drawn Area' }
+        };
+        
+        // Remove markers and add polygon
+        drawMarkers.forEach(marker => map.removeLayer(marker));
+        drawMarkers = [];
+        
+        if (window.drawnAreaLayer) map.removeLayer(window.drawnAreaLayer);
+        window.drawnAreaLayer = L.geoJSON(drawnPolygon, {
+            style: { color: '#27ae60', weight: 3, fillColor: '#2ecc71', fillOpacity: 0.3 }
+        }).addTo(map);
+        drawnLayers.push(window.drawnAreaLayer);
+        
+        // Fit map to drawn area
+        map.fitBounds(window.drawnAreaLayer.getBounds());
+        
+        isDrawing = false;
+        const drawBtn = document.getElementById(currentDrawPrefix ? `${currentDrawPrefix}DrawBtn` : 'drawBtn');
+        const clearBtn = document.getElementById(currentDrawPrefix ? `${currentDrawPrefix}ClearDrawBtn` : 'clearDrawBtn');
+        if (drawBtn) drawBtn.innerHTML = currentDrawPrefix === 'building' ? 'Start Drawing Polygon' : 'Start Drawing Area';
+        if (clearBtn) clearBtn.style.display = 'inline-block';
+        updateStatus('✅ Custom area drawn! Ready to run query.', false);
+        
+        // Remove event handlers
+        map.off('click', onMapClick);
+        map.off('dblclick', finishDrawing);
+        map.off('contextmenu', finishDrawing);
+        map.doubleClickZoom.enable();
+    }
+    
+    function clearDrawing(prefix = '') {
+        isDrawing = false;
+        currentDrawPrefix = '';
+        drawPoints = [];
+        
+        // Remove markers
+        drawMarkers.forEach(marker => map.removeLayer(marker));
+        drawMarkers = [];
+        
+        // Remove polygon
+        if (window.drawnAreaLayer) {
+            map.removeLayer(window.drawnAreaLayer);
+            drawnLayers = drawnLayers.filter(layer => layer !== window.drawnAreaLayer);
+            window.drawnAreaLayer = null;
+        }
+        
+        drawnPolygon = null;
+        
+        const defectDrawBtn = document.getElementById('defectDrawBtn');
+        const defectClearBtn = document.getElementById('defectClearDrawBtn');
+        const buildingDrawBtn = document.getElementById('buildingDrawBtn');
+        const buildingClearBtn = document.getElementById('buildingClearDrawBtn');
+        if (defectDrawBtn) defectDrawBtn.innerHTML = 'Start Drawing Area';
+        if (defectClearBtn) defectClearBtn.style.display = 'none';
+        if (buildingDrawBtn) buildingDrawBtn.innerHTML = 'Start Drawing Polygon';
+        if (buildingClearBtn) buildingClearBtn.style.display = 'none';
+        updateStatus('🗑️ Drawing cleared.', false);
+        
+        // Remove event handlers
+        map.off('click', onMapClick);
+        map.off('dblclick', finishDrawing);
+        map.off('contextmenu', finishDrawing);
+        map.doubleClickZoom.enable();
+    }
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        loadAllGeoJSON();
+        updateUIMode();
+    });
+    
+    window.toggleQueryPanel = toggleQueryPanel;
+    window.clearAllLayers = clearAllLayers;
+    window.toggleLegend = toggleLegend;
+    window.activateInfoMode = activateInfoMode;
+    window.closeQueryPanel = closeQueryPanel;
+    window.runQuery = runQuery;
+    window.populateAttributeFields = populateAttributeFields;
+    window.updateUIMode = updateUIMode;
+    window.updateBoundaryType = updateBoundaryType;
+    window.startDrawing = startDrawing;
+    window.clearDrawing = clearDrawing;
+    window.startRoadLineSelection = startRoadLineSelection;
+    window.clearRoadLineSelection = clearRoadLineSelection;
+    window.toggleDefectHeatPanel = toggleDefectHeatPanel;
+    window.toggleBuildingOverlapPanel = toggleBuildingOverlapPanel;
+    window.runBuildingOverlap = runBuildingOverlap;
+    window.toggleLayerVisibility = toggleLayerVisibility;
+</script>
+</body>
+</html>
